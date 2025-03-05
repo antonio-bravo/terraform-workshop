@@ -82,3 +82,27 @@ provider "aws" {
 - Go to https://console.aws.amazon.com/ec2/v2/home and you should see `Running Instances` `1`
 - Go back to your console, and run `terraform destroy` — Again, at the prompt, type `yes`
 - Go back to https://console.aws.amazon.com/ec2/v2/home and you should see `Running Instances` `0`
+
+
+
+### Getting rid of terraform state lock🔒 headaches 🤯 in GitHub Actions
+
+Background: When terraform runs plan or apply, it locks the state file to prevent concurrent changes.
+ 
+The problem: If a terraform command is cancelled, the lock is not automatically released - nor does it time out by itself. This happened in our pipelines regularly, when a new Continuous Deployment was triggered by a push to main, cancelling the previous run that was in progress.
+
+- Solution found here [here](https://github.com/orgs/community/discussions/26311#discussioncomment-11263095)
+
+```
+    - name: Terraform apply
+      id: apply
+      run: terraform apply -no-color -auto-approve
+
+    - name: Release lock if exists
+      if: ${{ steps.apply.outcome == 'cancelled' && always() }}
+      run: |
+        lock_id=$(terraform plan -no-color -refresh=false 2>&1 | grep ' ID: ' | cut -d: -f2 | tr -d ' ' || true)
+        if [[ -n "${lock_id}" ]]; then
+          terraform force-unlock -force ${lock_id}
+        fi
+```
